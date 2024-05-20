@@ -44,3 +44,7 @@ Here's how to connect the components:
 - Connect the RS232 port of the adapter to the RJ10 male cable, which then connects to the KVM serial port.
 
 Please note that the GPIO numbers are based on the `machine.Pin` numbers used in the `main.py` script. Make sure to adjust these numbers if you've used different pins in your setup.
+
+## Thanks
+
+Thank you Kert for the advice and all the help!
