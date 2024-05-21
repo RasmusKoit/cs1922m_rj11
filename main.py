@@ -1,7 +1,7 @@
 import network
 import time
 from machine import Pin, SoftI2C, UART, Timer, reset
-import ssd1306 # type: ignore
+import ssd1306
 import secrets
 
 # Constants
@@ -17,7 +17,7 @@ WIFI_SSID = secrets.WIFI_SSID
 WIFI_PASSWORD = secrets.WIFI_PASSWORD
 WIFI_TIMEOUT = 30  # Timeout for WiFi connection in seconds
 
-DEBOUNCE_TIME_MS = 200
+DEBOUNCE_TIME_MS = 1000
 DISPLAY_DURATION = 5
 
 # Initialize hardware
@@ -75,6 +75,7 @@ def switchKVM(kvmPort):
 
 def updateDisplay(uptimeSeconds):
     try:
+        global buttonPressed
         center_x, center_y = 16, 33
         oled.fill(0)
         uptimeMessage = 'Uptime: {:02d}:{:02d}:{:02d}'.format(uptimeSeconds // 3600, (uptimeSeconds % 3600 // 60), uptimeSeconds % 60)
@@ -95,13 +96,14 @@ def updateDisplay(uptimeSeconds):
             oled.text(buttonMessage, 0, 54, 1)
         else:
             oled.text("", 0, 54, 1)
+            buttonPressed = False
         oled.show()
     except Exception as e:
         print(f'Display update failed: {e}')
 
 def handleButton(pin):
     global buttonPressed, buttonMessage, buttonPressTime, selectedKVM, lastPressTime, startTime, lastButtonPressed
-    currentTime = time.ticks_ms()
+    currentTime = time.time()
     if time.ticks_diff(currentTime, lastPressTime[pin]) < DEBOUNCE_TIME_MS:
         return
     
@@ -115,9 +117,9 @@ def handleButton(pin):
         selectedKVM = 2
     lastPressTime[pin] = currentTime
     buttonPressed = True
-    buttonPressTime = time.time()
+    buttonPressTime = currentTime
     lastButtonPressed = pin
-    updateDisplay(time.time() - startTime)
+    updateDisplay(currentTime - startTime)
     openKVM()
     switchKVM(str(selectedKVM))
     closeKVM()
@@ -125,15 +127,20 @@ def handleButton(pin):
 def initialize_display():
     global oled
     try:
+        print('Initializing display...')
+        time.sleep(5)
         I2C = SoftI2C(scl=Pin(I2C_SCL_PIN), sda=Pin(I2C_SDA_PIN))
-        time.sleep(1)  # Ensure proper initialization time for I2C
+        time.sleep(5)
+        while I2C.scan() == []:
+            print('I2C device not found')
+            time.sleep(1)
         oled = ssd1306.SSD1306_I2C(128, 64, I2C)
-        oled.rotate(True)
         time.sleep(1)  # Additional delay to stabilize the display
         print('Display initialized')
     except Exception as e:
         print(f'Display initialization failed: {e}')
-        reset()  # Reset the Pico if the display initialization fails
+        time.sleep(10)
+        # reset()  # Reset the Pico if the display initialization fails
 
 def initialize_uart():
     global uart
@@ -142,7 +149,6 @@ def initialize_uart():
         print('UART initialized')
     except Exception as e:
         print(f'UART initialization failed: {e}')
-        reset()  # Reset the Pico if the UART initialization fails
 
 def cleanup():
     wlan.active(False)
@@ -158,8 +164,8 @@ try:
     timer.init(period=500, mode=Timer.PERIODIC, callback=blinkLED)
     
     connectToWifi()
-    initialize_display()
     initialize_uart()
+    initialize_display()
 
     BUTTON_ONE.irq(trigger=Pin.IRQ_FALLING, handler=lambda pin: handleButton(pin))
     BUTTON_TWO.irq(trigger=Pin.IRQ_FALLING, handler=lambda pin: handleButton(pin))
@@ -176,6 +182,5 @@ except Exception as e:
     print(f'Error: {e}')
 except KeyboardInterrupt:
     print('Ctrl+C: Exiting...')
-    reset()
 finally:
     cleanup()
