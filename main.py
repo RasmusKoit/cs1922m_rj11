@@ -37,41 +37,58 @@ lastButtonPressed = BUTTON_ONE
 oled = None
 uart = None
 wlan = network.WLAN(network.STA_IF)
+buttonActionFlag = False
 
 def blinkLED(timer):
-    LED.toggle()
+    try:
+        LED.toggle()
+    except Exception as e:
+        printLog(f'Error toggling LED: {e}')
 
 def connectToWifi():
-    wlan.active(True)
-    wlan.connect(WIFI_SSID, WIFI_PASSWORD)
-    
-    start_time = time.time()
-    while not wlan.isconnected():
-        if time.time() - start_time > WIFI_TIMEOUT:
-            print("Failed to connect to WiFi")
-            return False
-        print('Waiting for connection...')
-        time.sleep(1)
-    
-    print("Connected to WiFi", wlan.ifconfig())
-    timer.deinit()
-    return True
+    try:
+        wlan.active(True)
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        
+        start_time = time.time()
+        while not wlan.isconnected():
+            if time.time() - start_time > WIFI_TIMEOUT:
+                printLog("Failed to connect to WiFi")
+                return False
+            printLog('Waiting for connection...')
+            time.sleep(1)
+        
+        printLog("Connected to WiFi "  + " ".join(wlan.ifconfig()) )
+        timer.deinit()
+        return True
+    except Exception as e:
+        printLog(f'WiFi connection failed: {e}')
+        return False
 
 def openKVM():
-    print('Open')
-    uart.write('open\r\n')
-    time.sleep(1)
+    try:
+        printLog('Open')
+        uart.write('open\r\n')
+        time.sleep(1)
+    except Exception as e:
+        printLog(f'Failed to open KVM: {e}')
 
 def closeKVM():
-    print('Close')
-    uart.write('close\r\n')
-    time.sleep(1)
+    try:
+        printLog('Close')
+        uart.write('close\r\n')
+        time.sleep(1)
+    except Exception as e:
+        printLog(f'Failed to close KVM: {e}')
 
 def switchKVM(kvmPort):
-    message = f'Switching to port {kvmPort}'
-    print(message)
-    uart.write(f'sw i0{kvmPort}\r\n')
-    time.sleep(2)
+    try:
+        message = f'Switching to port {kvmPort}'
+        printLog(message)
+        uart.write(f'sw i0{kvmPort}\r\n')
+        time.sleep(2)
+    except Exception as e:
+        printLog(f'Failed to switch KVM: {e}')
 
 def updateDisplay(uptimeSeconds):
     try:
@@ -99,46 +116,54 @@ def updateDisplay(uptimeSeconds):
             buttonPressed = False
         oled.show()
     except Exception as e:
-        print(f'Display update failed: {e}')
+        printLog(f'Display update failed: {e}')
 
 def handleButton(pin):
-    global buttonPressed, buttonMessage, buttonPressTime, selectedKVM, lastPressTime, startTime, lastButtonPressed
-    currentTime = time.time()
-    if time.ticks_diff(currentTime, lastPressTime[pin]) < DEBOUNCE_TIME_MS:
-        return
-    
-    if lastButtonPressed != pin:
-        startTime = time.time()
-    if pin == BUTTON_ONE:
-        buttonMessage = "Button 1 pressed"
-        selectedKVM = 1
-    elif pin == BUTTON_TWO:
-        buttonMessage = "Button 2 pressed"
-        selectedKVM = 2
-    lastPressTime[pin] = currentTime
-    buttonPressed = True
-    buttonPressTime = currentTime
-    lastButtonPressed = pin
-    updateDisplay(currentTime - startTime)
-    openKVM()
-    switchKVM(str(selectedKVM))
-    closeKVM()
+    try:
+        global buttonPressed, buttonMessage, buttonPressTime, selectedKVM, lastPressTime, startTime, lastButtonPressed, buttonActionFlag
+        currentTime = time.time()
+
+        if currentTime - lastPressTime[pin] < DEBOUNCE_TIME_MS / 1000:
+            printLog('Debounce: Ignoring press')
+            return
+        printLog(f'Button {pin} pressed at {currentTime}')
+
+        if lastButtonPressed != pin:
+            startTime = time.time()
+            printLog(f'New button press detected. startTime set to {startTime}')
+
+        if pin == BUTTON_ONE:
+            buttonMessage = "Button 1 pressed"
+            selectedKVM = 1
+        elif pin == BUTTON_TWO:
+            buttonMessage = "Button 2 pressed"
+            selectedKVM = 2
+        
+        lastPressTime[pin] = currentTime
+        buttonPressed = True
+        buttonPressTime = currentTime
+        lastButtonPressed = pin
+        printLog(f'Button press processed: {buttonMessage}, KVM port: {selectedKVM}')
+        buttonActionFlag = True
+        
+    except Exception as e:
+        printLog(f'Button handling failed: {e}')
 
 def initialize_display():
     global oled
     try:
-        print('Initializing display...')
+        printLog('Initializing display...')
         time.sleep(5)
         I2C = SoftI2C(scl=Pin(I2C_SCL_PIN), sda=Pin(I2C_SDA_PIN))
         time.sleep(5)
         while I2C.scan() == []:
-            print('I2C device not found')
+            printLog('I2C device not found')
             time.sleep(1)
         oled = ssd1306.SSD1306_I2C(128, 64, I2C)
         time.sleep(1)  # Additional delay to stabilize the display
-        print('Display initialized')
+        printLog('Display initialized')
     except Exception as e:
-        print(f'Display initialization failed: {e}')
+        printLog(f'Display initialization failed: {e}')
         time.sleep(10)
         # reset()  # Reset the Pico if the display initialization fails
 
@@ -146,24 +171,40 @@ def initialize_uart():
     global uart
     try:
         uart = UART(1, baudrate=19200, bits=8, parity=None, stop=1, tx=Pin(UART_TX_PIN), rx=Pin(UART_RX_PIN))
-        print('UART initialized')
+        printLog('UART initialized')
     except Exception as e:
-        print(f'UART initialization failed: {e}')
+        printLog(f'UART initialization failed: {e}')
 
 def cleanup():
-    wlan.active(False)
-    wlan.disconnect()
+    try:
+        wlan.active(False)
+        wlan.disconnect()
+    except Exception as e:
+        printLog(f'Failed to cleanup WiFi: {e}')
     if oled:
-        oled.fill(0)
-        oled.show()
-    print('Goodbye!')
+        try:
+            oled.fill(0)
+            oled.show()
+        except Exception as e:
+            printLog(f'Failed to clear display: {e}')
+    printLog('Goodbye!')
+
+def printLog(message, file_path = 'log.txt'):
+    try:
+        print(message)
+        with open(file_path, 'a') as f:
+            f.write(f'{message}\n')
+    except Exception as e:
+        print(f'Failed to log message: {e}')
 
 # Main execution
 try:
     time.sleep(1)
     timer.init(period=500, mode=Timer.PERIODIC, callback=blinkLED)
     
-    connectToWifi()
+    if not connectToWifi():
+        raise RuntimeError('WiFi connection failed')
+    
     initialize_uart()
     initialize_display()
 
@@ -176,11 +217,18 @@ try:
         currentTime = time.time()
         uptimeSeconds = int(currentTime - startTime)
         updateDisplay(uptimeSeconds)
+
+        if buttonActionFlag:
+            buttonActionFlag = False
+            openKVM()
+            switchKVM(str(selectedKVM))
+            closeKVM()
+        
         time.sleep(1)
 
 except Exception as e:
-    print(f'Error: {e}')
+    printLog(f'Error: {e}')
 except KeyboardInterrupt:
-    print('Ctrl+C: Exiting...')
+    printLog('Ctrl+C: Exiting...')
 finally:
     cleanup()
